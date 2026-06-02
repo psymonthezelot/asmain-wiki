@@ -2265,6 +2265,11 @@ async function loadMapData() {
       mapImageData = imgData.values[1][0];
     }
 
+    if (currentSection === 'map') renderMap();
+    showStatus(`Map loaded — ${mapPins.length} pin${mapPins.length===1?'':'s'}`);
+  } catch(err) { console.error('Map load error:', err); }
+}
+
 // ═══════════════════════════════════════════════
 //  STATUS
 // ═══════════════════════════════════════════════
