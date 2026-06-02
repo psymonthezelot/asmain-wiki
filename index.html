@@ -2167,17 +2167,21 @@ function renderField(f, value) {
 
 
   if (f.type === 'location-select') {
-    const locs = (allData['locations'] || []).map(l => l.name).filter(Boolean).sort();
-    const opts = locs.map(l => `<option value="${l}" ${value===l?'selected':''}>${l}</option>`).join('');
+    const locs    = (allData['locations'] || []).map(l => l.name).filter(Boolean).sort();
+    const nations = (allData['nations']   || []).map(n => n.name).filter(Boolean).sort();
+    const locsOpts    = locs.map(l    => `<option value="${l}" ${value===l?'selected':''}>${l}</option>`).join('');
+    const nationsOpts = nations.map(n => `<option value="${n}" ${value===n?'selected':''}>${n}</option>`).join('');
+    const allKnown = [...locs, ...nations];
     return `<div><label class="form-label">${f.label}</label>
       <select class="form-select" id="field_${f.key}">
         <option value="">— Select Location —</option>
-        ${opts}
-        <option value="__other__" ${!locs.includes(value)&&value?'selected':''}>Other / Unknown</option>
+        ${locs.length    ? `<optgroup label="📍 Locations">${locsOpts}</optgroup>`       : ''}
+        ${nations.length ? `<optgroup label="🏰 Nations">${nationsOpts}</optgroup>`      : ''}
+        <option value="__other__" ${!allKnown.includes(value)&&value?'selected':''}>Other / Unknown</option>
       </select>
       <input class="form-input" id="field_${f.key}_other" placeholder="Type location name…"
-        style="margin-top:6px;display:${!locs.includes(value)&&value?'block':'none'}"
-        value="${!locs.includes(value)?value:''}" />
+        style="margin-top:6px;display:${!allKnown.includes(value)&&value?'block':'none'}"
+        value="${!allKnown.includes(value)?value:''}" />
     </div>`;
   }
 
@@ -2320,13 +2324,17 @@ function openDetail(section, index) {
     html += `<div class="detail-grid">`;
     metaFields.forEach(f => {
       let val = entry[f.key];
-      // Render location field as a clickable link
+      // Render location field as a clickable link (checks locations then nations)
       if (f.key === 'location' && val) {
-        const locs = allData['locations'] || [];
+        const locs    = allData['locations'] || [];
+        const nations = allData['nations']   || [];
         const li = locs.findIndex(l => l.name && l.name.toLowerCase() === val.toLowerCase());
-        val = li !== -1
-          ? `<button class="wiki-link" onclick="navigateToEntry('locations',${li})">${val}</button>`
-          : val;
+        const ni = nations.findIndex(n => n.name && n.name.toLowerCase() === val.toLowerCase());
+        if (li !== -1) {
+          val = `<button class="wiki-link" onclick="navigateToEntry('locations',${li})">${val}</button>`;
+        } else if (ni !== -1) {
+          val = `<button class="wiki-link" onclick="navigateToEntry('nations',${ni})">${val}</button>`;
+        }
       }
       // Render affiliation field as clickable org links
       if (f.key === 'affiliation' && val) {
@@ -2397,6 +2405,27 @@ function openDetail(section, index) {
         <div>${linkedLocs.map(({ loc, i }) =>
           `<span class="backlink-chip" onclick="navigateToEntry('locations',${i})">
             <span class="chip-icon">${typeIcon[loc.type]||'📍'}</span>${loc.name}${loc.type?' <span style="opacity:0.6;font-size:8px">(${loc.type})</span>':''}
+          </span>`
+        ).join('')}</div>
+      </div>`;
+    }
+
+    // NPCs/PCs whose last known location is this nation
+    const seenInNation = [];
+    ['npcs','pcs'].forEach(sec => {
+      (allData[sec] || []).forEach((e, i) => {
+        if (e.location && e.location.toLowerCase() === entry.name.toLowerCase()) {
+          seenInNation.push({ sec, i, e });
+        }
+      });
+    });
+    if (seenInNation.length) {
+      html += `<div class="backlinks-section">
+        <div class="backlinks-label">👁 ${seenInNation.length} Character${seenInNation.length===1?'':'s'} Last Seen Here</div>
+        <div>${seenInNation.map(({ sec, i, e }) =>
+          `<span class="backlink-chip" onclick="navigateToEntry('${sec}',${i})">
+            <span class="chip-icon">${SECTIONS[sec].icon}</span>${e.name}
+            <span style="opacity:0.6;font-size:8px">(${sec === 'pcs' ? 'PC' : 'NPC'})</span>
           </span>`
         ).join('')}</div>
       </div>`;
