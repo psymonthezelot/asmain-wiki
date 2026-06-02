@@ -2141,8 +2141,8 @@ function closePicker() {
 // ═══════════════════════════════════════════════
 //  WORLD MAP
 // ═══════════════════════════════════════════════
-let mapPins      = [];   // { id, label, linkedSection, linkedName, x, y } (x/y as % of image)
-let mapImageData = null; // base64 data URL
+let mapPins      = [];
+let mapImageData = 'https://psymonthezelot.github.io/asmain-wiki/map.jpg';
 let mapPendingX  = 0;
 let mapPendingY  = 0;
 
@@ -2167,25 +2167,15 @@ function renderMap() {
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary" onclick="loadMapData()">⟳ Refresh</button>
-        ${mapImageData
-          ? `<button class="btn btn-secondary" onclick="document.getElementById('mapUpload').click()">↑ Replace Map</button>`
-          : `<button class="btn btn-primary"   onclick="document.getElementById('mapUpload').click()">↑ Upload Map Image</button>`}
-        <input type="file" id="mapUpload" accept="image/*" style="display:none" onchange="handleMapUpload(event)" />
+        <button class="btn btn-primary" onclick="openNewEntry('map-pin')" style="display:none"></button>
       </div>
     </div>
     <div class="map-hint">
-      ${mapImageData
-        ? '🖱 Right-click anywhere on the map to place a pin · Click a pin to open its linked entry'
-        : 'Upload a map image to get started — any PNG, JPG, or WEBP works'}
+      🖱 Right-click anywhere on the map to place a pin · Click a pin to open its linked entry
     </div>
     <div class="map-body">
       <div class="map-container" id="mapContainer" oncontextmenu="onMapRightClick(event)">
-        ${mapImageData
-          ? `<img class="map-img" id="mapImg" src="${mapImageData}" draggable="false" />`
-          : `<div class="map-placeholder">
-               <div class="map-placeholder-icon">🗺️</div>
-               <div class="map-placeholder-text">No map uploaded yet<br><em>Click "Upload Map Image" above to add your world map</em></div>
-             </div>`}
+        <img class="map-img" id="mapImg" src="${mapImageData}" draggable="false" />
         <div id="mapPinsLayer"></div>
       </div>
     </div>
@@ -2193,19 +2183,7 @@ function renderMap() {
   renderPins();
 }
 
-function handleMapUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    mapImageData = ev.target.result;
-    saveMapImageToSheet();
-    renderMap();
-    showStatus('Map uploaded ✓');
-  };
-  reader.readAsDataURL(file);
-}
-
+// ── Sheet persistence for map pins ──
 function renderPins() {
   const layer = document.getElementById('mapPinsLayer');
   if (!layer) return;
@@ -2375,27 +2353,11 @@ async function saveMapPinsToSheet() {
   } catch(err) { console.error('Map pin save error:', err); }
 }
 
-async function saveMapImageToSheet() {
-  // Store the image as a single cell in a 'MapImage' tab
-  try {
-    const headers = ['data'];
-    await fetch(WORKER_URL, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'ensureHeaders', sheetId:config.sheetId, tabName:'MapImage', headers })
-    });
-    await fetch(WORKER_URL, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action:'update', sheetId:config.sheetId, tabName:'MapImage', row:0, values:[mapImageData], headers })
-    });
-  } catch(err) { console.error('Map image save error:', err); }
-}
-
 async function loadMapData() {
   if (!config.sheetId || !config.apiKey) return;
   try {
-    // Load pins
-    const pinsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values/Map?key=${config.apiKey}`;
-    const pinsRes = await fetch(pinsUrl);
+    const pinsUrl  = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values/Map?key=${config.apiKey}`;
+    const pinsRes  = await fetch(pinsUrl);
     const pinsData = await pinsRes.json();
     if (pinsData.values && pinsData.values.length > 1) {
       mapPins = pinsData.values.slice(1).map(r => ({
@@ -2403,15 +2365,6 @@ async function loadMapData() {
         x: parseFloat(r[4])||0, y: parseFloat(r[5])||0
       }));
     }
-
-    // Load image
-    const imgUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values/MapImage?key=${config.apiKey}`;
-    const imgRes = await fetch(imgUrl);
-    const imgData = await imgRes.json();
-    if (imgData.values && imgData.values[1] && imgData.values[1][0]) {
-      mapImageData = imgData.values[1][0];
-    }
-
     if (currentSection === 'map') renderMap();
     showStatus(`Map loaded — ${mapPins.length} pin${mapPins.length===1?'':'s'}`);
   } catch(err) { console.error('Map load error:', err); }
