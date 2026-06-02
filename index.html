@@ -1667,7 +1667,7 @@ const FIELDS = {
     { key:'dm',         label:'DM Running It',      type:'text' },
     { key:'dates',      label:'Dates Played',       type:'text' },
     { key:'setting',    label:'Primary Setting',    type:'text' },
-    { key:'party',      label:'Party Members',      type:'text' },
+    { key:'party',      label:'Party Members',      type:'pc-multiselect' },
     { key:'status',     label:'Status',             type:'select',   options:['Active','Completed','Abandoned','Planned'] },
     { key:'overview',   label:'Premise / Overview', type:'textarea' },
     { key:'events',     label:'Major Events',       type:'textarea', placeholder:'Things that permanently changed the world…' },
@@ -2358,6 +2358,31 @@ function openEntryForm(section, data) {
 function renderField(f, value) {
   value = value || '';
 
+  // Dynamic PC multi-select — populated from allData.pcs
+  if (f.type === 'pc-multiselect') {
+    const pcs      = (allData['pcs'] || []).map(p => p.name).filter(Boolean).sort();
+    const selected = (value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const chipsHtml = selected.length
+      ? selected.map(s => `<span class="org-chip">${s}<button type="button" class="org-chip-remove" onclick="removePcChip('${f.key}','${s.replace(/'/g,"\\'")}')">×</button></span>`).join('')
+      : `<span class="org-chips-empty">None assigned</span>`;
+    const opts = pcs.filter(p => !selected.includes(p))
+      .map(p => `<option value="${p}">${p}</option>`).join('');
+    return `<div>
+      <label class="form-label">${f.label}</label>
+      <div class="org-multiselect" id="pcms_${f.key}">
+        <input type="hidden" id="field_${f.key}" value="${selected.join(',')}" />
+        <div class="org-chips" id="pcchips_${f.key}">${chipsHtml}</div>
+        <div class="org-add-row">
+          <select class="org-add-select" id="pcadd_${f.key}">
+            <option value="">— Add player character —</option>
+            ${opts}
+          </select>
+          <button type="button" class="org-add-btn" onclick="addPcChip('${f.key}')">+ Add</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
   // Dynamic org multi-select — populated from allData.organizations
   if (f.type === 'org-multiselect') {
     const orgs = (allData['organizations'] || []).map(o => o.name).filter(Boolean).sort();
@@ -2450,6 +2475,42 @@ function renderField(f, value) {
   }
   return `<div><label class="form-label">${f.label}${f.required?' *':''}</label>
     <input class="form-input" id="field_${f.key}" value="${value.replace(/"/g,'&quot;')}" placeholder="${f.placeholder||''}" /></div>`;
+}
+
+// ── PC multi-select helpers ──
+function addPcChip(key) {
+  const sel    = document.getElementById('pcadd_' + key);
+  const hidden = document.getElementById('field_' + key);
+  const chips  = document.getElementById('pcchips_' + key);
+  const val    = sel.value.trim();
+  if (!val) return;
+  const current = hidden.value ? hidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  if (current.includes(val)) { sel.value = ''; return; }
+  current.push(val);
+  hidden.value = current.join(',');
+  chips.innerHTML = current.map(s =>
+    `<span class="org-chip">${s}<button type="button" class="org-chip-remove" onclick="removePcChip('${key}','${s.replace(/'/g,"\\'")}')">×</button></span>`
+  ).join('');
+  const opt = sel.querySelector(`option[value="${val}"]`);
+  if (opt) opt.remove();
+  sel.value = '';
+}
+
+function removePcChip(key, val) {
+  const hidden = document.getElementById('field_' + key);
+  const chips  = document.getElementById('pcchips_' + key);
+  const sel    = document.getElementById('pcadd_' + key);
+  const current = hidden.value ? hidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const updated = current.filter(s => s !== val);
+  hidden.value  = updated.join(',');
+  chips.innerHTML = updated.length
+    ? updated.map(s => `<span class="org-chip">${s}<button type="button" class="org-chip-remove" onclick="removePcChip('${key}','${s.replace(/'/g,"\\'")}')">×</button></span>`).join('')
+    : `<span class="org-chips-empty">None assigned</span>`;
+  if (sel && !sel.querySelector(`option[value="${val}"]`)) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    sel.appendChild(opt);
+  }
 }
 
 // ── Org multi-select helpers ──
@@ -2562,6 +2623,16 @@ function openDetail(section, index) {
     html += `<div class="detail-grid">`;
     metaFields.forEach(f => {
       let val = entry[f.key];
+      // Render party field as clickable PC links
+      if (f.key === 'party' && val) {
+        const pcs = allData['pcs'] || [];
+        val = val.split(',').map(s => s.trim()).filter(Boolean).map(name => {
+          const pi = pcs.findIndex(p => p.name && p.name.toLowerCase() === name.toLowerCase());
+          return pi !== -1
+            ? `<button class="wiki-link" onclick="navigateToEntry('pcs',${pi})">${name}</button>`
+            : name;
+        }).join(', ');
+      }
       // Render location field as a clickable link (checks locations then nations)
       if (f.key === 'location' && val) {
         const locs    = allData['locations'] || [];
@@ -2664,6 +2735,27 @@ function openDetail(section, index) {
           `<span class="backlink-chip" onclick="navigateToEntry('${sec}',${i})">
             <span class="chip-icon">${SECTIONS[sec].icon}</span>${e.name}
             <span style="opacity:0.6;font-size:8px">(${sec === 'pcs' ? 'PC' : 'NPC'})</span>
+          </span>`
+        ).join('')}</div>
+      </div>`;
+    }
+  }
+
+  // Auto-populate story arcs for PC entries
+  if (section === 'pcs' && entry.name) {
+    const arcs = (allData['story'] || [])
+      .map((s, i) => ({ s, i }))
+      .filter(({ s }) => {
+        const party = (s.party || '').split(',').map(p => p.trim()).filter(Boolean);
+        return party.some(p => p.toLowerCase() === entry.name.toLowerCase());
+      });
+    if (arcs.length) {
+      html += `<div class="backlinks-section">
+        <div class="backlinks-label">📖 ${arcs.length} Campaign Arc${arcs.length===1?'':'s'}</div>
+        <div>${arcs.map(({ s, i }) =>
+          `<span class="backlink-chip" onclick="navigateToEntry('story',${i})">
+            <span class="chip-icon">📖</span>${s.name}
+            ${s.status ? `<span style="opacity:0.6;font-size:8px">(${s.status})</span>` : ''}
           </span>`
         ).join('')}</div>
       </div>`;
