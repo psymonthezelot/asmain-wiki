@@ -2271,6 +2271,12 @@ async function loadMapData() {
 }
 
 // ═══════════════════════════════════════════════
+//  MODAL HELPERS
+// ═══════════════════════════════════════════════
+function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
+function closeModalOnOverlay(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
+// ═══════════════════════════════════════════════
 //  STATUS
 // ═══════════════════════════════════════════════
 let statusTimer;
