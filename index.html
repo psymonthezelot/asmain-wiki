@@ -969,7 +969,121 @@
     margin-bottom: 4px;
   }
 
-  /* ── World Map ── */
+  /* ── Password Gate ── */
+  .pw-gate {
+    position: fixed;
+    inset: 0;
+    background: #1a0e06;
+    background-image:
+      radial-gradient(ellipse at 20% 20%, #2a1508 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 80%, #0e0804 0%, transparent 60%);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0;
+  }
+  .pw-box {
+    background: linear-gradient(145deg, var(--parchment) 0%, #edd9a3 100%);
+    border: 2px solid var(--gold);
+    border-radius: 4px;
+    padding: 40px 48px 36px;
+    width: 360px;
+    text-align: center;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.4);
+    animation: slideUp 0.3s ease;
+  }
+  .pw-world {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: 28px;
+    color: var(--ink);
+    text-shadow: 1px 1px 0 rgba(255,255,255,0.3);
+    margin-bottom: 4px;
+  }
+  .pw-ornament {
+    font-size: 10px;
+    color: var(--gold);
+    letter-spacing: 6px;
+    margin-bottom: 6px;
+    opacity: 0.7;
+  }
+  .pw-subtitle {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 28px;
+  }
+  .pw-label {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-light);
+    display: block;
+    margin-bottom: 8px;
+    text-align: left;
+  }
+  .pw-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: 'IM Fell English', serif;
+    font-size: 15px;
+    color: var(--ink);
+    letter-spacing: 0.1em;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+  .pw-input:focus { outline: none; border-color: var(--gold); background: rgba(255,255,255,0.8); }
+  .pw-input.error { border-color: var(--red-wax); animation: pwShake 0.3s ease; }
+  @keyframes pwShake {
+    0%,100% { transform: translateX(0); }
+    20%,60%  { transform: translateX(-6px); }
+    40%,80%  { transform: translateX(6px); }
+  }
+  .pw-btn {
+    width: 100%;
+    padding: 11px;
+    background: linear-gradient(135deg, var(--red-wax-light), var(--red-wax));
+    border: 1px solid #c43a3a;
+    border-radius: 3px;
+    color: var(--parchment);
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 10px;
+  }
+  .pw-btn:hover { background: linear-gradient(135deg, #d04040, var(--red-wax-light)); }
+  .pw-error {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    color: var(--red-wax);
+    letter-spacing: 0.1em;
+    min-height: 16px;
+  }
+  .pw-remember {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 14px;
+    cursor: pointer;
+  }
+  .pw-remember input { cursor: pointer; accent-color: var(--red-wax); }
+  .pw-remember span {
+    font-family: 'Cinzel', serif;
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+  }
+
   .map-container {
     position: relative;
     display: inline-block;
@@ -1031,6 +1145,23 @@
 </head>
 <body>
 
+<!-- PASSWORD GATE -->
+<div class="pw-gate" id="pwGate">
+  <div class="pw-box">
+    <div class="pw-world">Asmain</div>
+    <div class="pw-ornament">✦ ── ✦ ── ✦</div>
+    <div class="pw-subtitle">The Lore Codex · Restricted Access</div>
+    <label class="pw-label">Passphrase</label>
+    <input class="pw-input" id="pwInput" type="password" placeholder="Enter passphrase…"
+      onkeydown="if(event.key==='Enter')checkPassword()" />
+    <label class="pw-remember">
+      <input type="checkbox" id="pwRemember" checked />
+      <span>Remember on this device</span>
+    </label>
+    <button class="pw-btn" onclick="checkPassword()">Enter the Codex</button>
+    <div class="pw-error" id="pwError"></div>
+  </div>
+</div>
 <div class="app">
   <!-- SIDEBAR -->
   <nav class="sidebar">
@@ -1267,9 +1398,53 @@ const FIELDS = {
 };
 
 // ═══════════════════════════════════════════════
+//  PASSWORD GATE
+// ═══════════════════════════════════════════════
+const PW_HASH = 'bd64544b60ab60dffc446f1212489f77c8198f0b6275b03fbb385bc33541011a';
+
+async function hashString(str) {
+  const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkPassword() {
+  const val = document.getElementById('pwInput').value;
+  const hash = await hashString(val);
+  if (hash === PW_HASH) {
+    if (document.getElementById('pwRemember').checked) {
+      localStorage.setItem('asmainAuth', hash);
+    }
+    unlockApp();
+  } else {
+    const input = document.getElementById('pwInput');
+    const error = document.getElementById('pwError');
+    input.classList.add('error');
+    error.textContent = 'Incorrect passphrase. Try again.';
+    input.value = '';
+    setTimeout(() => input.classList.remove('error'), 400);
+  }
+}
+
+function unlockApp() {
+  const gate = document.getElementById('pwGate');
+  gate.style.transition = 'opacity 0.4s ease';
+  gate.style.opacity = '0';
+  setTimeout(() => gate.style.display = 'none', 400);
+}
+
+// ═══════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════
-window.onload = () => {
+window.onload = async () => {
+  // Check if already authenticated
+  const savedAuth = localStorage.getItem('asmainAuth');
+  if (savedAuth === PW_HASH) {
+    unlockApp();
+  } else {
+    // Focus password input
+    setTimeout(() => document.getElementById('pwInput')?.focus(), 100);
+  }
+
   // Apply any localStorage overrides on top of baked-in defaults
   const saved = localStorage.getItem('loreCodexConfig');
   if (saved) {
