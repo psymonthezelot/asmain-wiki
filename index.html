@@ -1352,7 +1352,13 @@ function renderSection(section) {
     <div id="entriesGrid">
       ${section === 'deities' && deityView === 'pairs'
         ? renderDeityPairs(entries)
-        : `<div class="entries-grid">${renderCards(entries, section)}</div>`}
+        : (() => {
+            let display = entries;
+            if (section === 'locations' && locFilter) {
+              display = entries.filter(e => e.type === locFilter);
+            }
+            return `<div class="entries-grid">${renderCards(display, section)}</div>`;
+          })()}
     </div>
   `;
 
