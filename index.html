@@ -1515,46 +1515,61 @@ async function saveEntry(section, entry, rowIndex) {
   const values  = headers.map(h => entry[h] || '');
   const tabName = sheetName(section);
 
-  saveLocal(section, entry, rowIndex);   // optimistic local update
+  saveLocal(section, entry, rowIndex);
 
   try {
+    showStatus('Signing in to sheet…');
+    let token;
+    try {
+      token = await getAccessToken();
+    } catch(authErr) {
+      console.error('AUTH FAILED:', authErr);
+      showStatus('Auth failed: ' + authErr.message, true);
+      return;
+    }
+
     showStatus('Saving to sheet…');
-    const token = await getAccessToken();
     const authH = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
     const base  = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}`;
 
     // Ensure header row exists
     const checkRes  = await fetch(`${base}/values/${encodeURIComponent(tabName)}!A1:Z1`, { headers: authH });
     const checkData = await checkRes.json();
+    console.log('Header check:', checkData);
     const hasHeaders = checkData.values && checkData.values[0] && checkData.values[0].length > 0;
 
     if (!hasHeaders) {
-      await fetch(`${base}/values/${encodeURIComponent(tabName)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      const hRes = await fetch(`${base}/values/${encodeURIComponent(tabName)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
         method: 'POST', headers: authH,
         body: JSON.stringify({ values: [headers] })
       });
+      console.log('Header write:', await hRes.json());
     }
 
+    let writeRes, writeData;
     if (rowIndex === -1) {
-      // Append new row
-      await fetch(`${base}/values/${encodeURIComponent(tabName)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+      writeRes  = await fetch(`${base}/values/${encodeURIComponent(tabName)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
         method: 'POST', headers: authH,
         body: JSON.stringify({ values: [values] })
       });
     } else {
-      // Update existing row (rowIndex is 0-based data index, +2 for header + 1-based)
       const sheetRow = rowIndex + 2;
       const range    = `${tabName}!A${sheetRow}:Z${sheetRow}`;
-      await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+      writeRes = await fetch(`${base}/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
         method: 'PUT', headers: authH,
         body: JSON.stringify({ values: [values] })
       });
     }
+    writeData = await writeRes.json();
+    console.log('Write result:', writeData);
+
+    if (writeData.error) throw new Error(writeData.error.message);
 
     showStatus('Saved to sheet ✓');
     await loadSection(section);
 
   } catch(err) {
+    console.error('SAVE ERROR:', err);
     showStatus('Sheet write failed: ' + err.message, true);
   }
 }
