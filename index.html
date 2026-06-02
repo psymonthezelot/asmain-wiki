@@ -1741,6 +1741,9 @@ window.onload = async () => {
   // Auto-load on open
   renderSection('nations');
   loadSection('nations');
+  // Pre-load all other sections in background so cross-links resolve immediately
+  const backgroundSections = ['locations','organizations','deities','races','npcs','pcs','story','timeline'];
+  backgroundSections.forEach(s => loadSection(s, true).catch(() => {}));
 };
 
 function saveConfig() {
@@ -2186,23 +2189,27 @@ function filterEntries() {
 // ═══════════════════════════════════════════════
 function sheetName(section) { return section.charAt(0).toUpperCase() + section.slice(1); }
 
-async function loadSection(section) {
+async function loadSection(section, silent = false) {
   if (!config.sheetId || !config.apiKey) {
-    showStatus('Connect your Google Sheet first (bottom-left)', true);
+    if (!silent) showStatus('Connect your Google Sheet first (bottom-left)', true);
     return;
   }
   const panel = document.getElementById('entriesGrid');
-  if (panel) panel.innerHTML = '<div class="loading">Consulting the archives…</div>';
+  if (panel && !silent) panel.innerHTML = '<div class="loading">Consulting the archives…</div>';
 
   try {
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values/${sheetName(section)}?key=${config.apiKey}`;
     const res  = await fetch(url);
     const data = await res.json();
 
-    if (data.error) { showStatus('Sheet error: ' + data.error.message, true); return; }
+    if (data.error) { if (!silent) showStatus('Sheet error: ' + data.error.message, true); return; }
 
     const rows = data.values || [];
-    if (rows.length < 2) { allData[section] = []; if (section === 'timeline') { renderTimeline(); } else { renderSection(section); } return; }
+    if (rows.length < 2) {
+      allData[section] = [];
+      if (!silent) { if (section === 'timeline') { renderTimeline(); } else { renderSection(section); } }
+      return;
+    }
 
     const headers = rows[0];
     allData[section] = rows.slice(1).map(row => {
@@ -2210,10 +2217,12 @@ async function loadSection(section) {
       headers.forEach((h, i) => obj[h] = row[i] || '');
       return obj;
     });
-    if (section === 'timeline') { renderTimeline(); } else { renderSection(section); }
-    showStatus(`Loaded ${allData[section].length} entries`);
+    if (!silent) {
+      if (section === 'timeline') { renderTimeline(); } else { renderSection(section); }
+      showStatus(`Loaded ${allData[section].length} entries`);
+    }
   } catch(err) {
-    showStatus('Failed to load: ' + err.message, true);
+    if (!silent) showStatus('Failed to load: ' + err.message, true);
   }
 }
 
