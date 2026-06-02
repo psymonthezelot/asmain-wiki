@@ -1009,6 +1009,53 @@
   }
   .org-add-btn:hover { background: rgba(200,146,42,0.3); }
 
+  /* ── Timeline ── */
+  .timeline-wrap { padding: 24px 32px 40px; }
+  .timeline-spine { position: relative; padding-left: 32px; }
+  .timeline-spine::before {
+    content: ''; position: absolute; left: 10px; top: 0; bottom: 0;
+    width: 2px; background: linear-gradient(180deg, var(--gold) 0%, var(--parchment-deep) 100%); opacity: 0.5;
+  }
+  .timeline-row { display: flex; gap: 12px; margin-bottom: 8px; align-items: flex-start; }
+  .timeline-dot {
+    position: absolute; left: 4px; width: 14px; height: 14px;
+    border-radius: 50%; border: 2px solid var(--gold); background: var(--parchment);
+    z-index: 1; margin-top: 14px; flex-shrink: 0;
+  }
+  .timeline-dot.beat  { background: var(--gold); }
+  .timeline-dot.event { background: var(--red-wax); border-color: var(--red-wax-light); }
+  .timeline-connector {
+    display: flex; align-items: center; gap: 8px; margin: 0; padding-left: 0;
+  }
+  .timeline-connector-label {
+    font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--ink-faint); font-style: italic;
+  }
+  .timeline-node {
+    flex: 1; background: linear-gradient(145deg, rgba(255,255,255,0.28), rgba(255,255,255,0.1));
+    border: 1px solid var(--parchment-deep); border-radius: 3px; padding: 12px 16px;
+    cursor: pointer; transition: all 0.2s; position: relative; min-width: 0;
+  }
+  .timeline-node:hover { border-color: var(--gold); box-shadow: 0 3px 12px var(--shadow); }
+  .timeline-node.type-beat::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--gold); border-radius: 3px 0 0 3px;
+  }
+  .timeline-node.type-event::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--red-wax); border-radius: 3px 0 0 3px;
+  }
+  .timeline-node-type { font-family:'Cinzel',serif; font-size:7px; letter-spacing:0.2em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:3px; }
+  .timeline-node-name { font-family:'Cinzel',serif; font-size:13px; font-weight:600; color:var(--ink); margin-bottom:4px; }
+  .timeline-node-preview { font-size:11px; font-style:italic; color:var(--ink-light); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .timeline-node-meta { margin-top:7px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .timeline-node-year { font-family:'Cinzel',serif; font-size:9px; color:var(--gold); letter-spacing:0.1em; }
+  .timeline-node-status { font-family:'Cinzel',serif; font-size:8px; padding:1px 7px; background:rgba(200,146,42,0.1); border:1px solid rgba(200,146,42,0.3); border-radius:2px; color:var(--ink-faint); }
+  .timeline-empty { padding:56px 24px; text-align:center; color:var(--ink-faint); }
+  .timeline-empty-icon { font-size:44px; opacity:0.25; margin-bottom:14px; }
+  .timeline-empty-title { font-family:'Cinzel',serif; font-size:15px; color:var(--ink-light); margin-bottom:8px; }
+  .timeline-empty-text { font-style:italic; font-size:13px; line-height:1.7; }
+
 
   ══════════════════════════════════════════ */
 
@@ -1416,6 +1463,9 @@
       <button class="nav-btn" onclick="switchSection('story')" id="nav-story">
         <span class="icon">📖</span> Story Beats
       </button>
+      <button class="nav-btn" onclick="switchToTimeline()" id="nav-timeline">
+        <span class="icon">⏳</span> Timeline
+      </button>
       <button class="nav-btn" onclick="switchToMap()" id="nav-map">
         <span class="icon">🗺️</span> World Map
       </button>
@@ -1600,7 +1650,17 @@ const FIELDS = {
     { key:'tags',       label:'Tags',               type:'text',     placeholder:'comma-separated' },
     { key:'dm',         label:'Last Edited By (DM)',type:'text' },
   ],
-  story: [
+  timeline: [
+    { key:'name',       label:'Event Name',         type:'text',     required:true },
+    { key:'type',       label:'Type',               type:'select',   options:['Story Beat','Custom Event'] },
+    { key:'storybeat',  label:'Linked Story Beat',  type:'storybeat-select' },
+    { key:'year',       label:'Year (optional)',     type:'text',     placeholder:'Leave blank until years are established' },
+    { key:'relation',   label:'Timing Relation',    type:'select',   options:['First (no anchor)','After','Before','During'] },
+    { key:'anchor',     label:'Relative To',        type:'timeline-anchor-select' },
+    { key:'status',     label:'Status',             type:'select',   options:['Completed','Active','Planned','Rumoured'] },
+    { key:'overview',   label:'Summary',            type:'textarea', placeholder:'Brief description of what happened or is happening' },
+    { key:'dm',         label:'Last Edited By (DM)',type:'text' },
+  ],
     { key:'name',       label:'Arc Name',           type:'text',     required:true },
     { key:'dm',         label:'DM Running It',      type:'text' },
     { key:'dates',      label:'Dates Played',       type:'text' },
@@ -1722,6 +1782,162 @@ function switchSection(section) {
   currentSection = section;
   renderSection(section);
   closeSidebar();
+}
+
+function switchToTimeline() {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('nav-timeline').classList.add('active');
+  currentSection = 'timeline';
+  loadSection('timeline');
+  renderTimeline();
+  closeSidebar();
+}
+
+// ═══════════════════════════════════════════════
+//  TIMELINE ENGINE
+// ═══════════════════════════════════════════════
+
+function renderTimeline() {
+  const panel   = document.getElementById('mainPanel');
+  const entries = allData['timeline'] || [];
+
+  panel.innerHTML = `
+    <div class="page-header">
+      <div class="page-title-wrap">
+        <span class="page-icon">⏳</span>
+        <div>
+          <div class="page-title">Timeline</div>
+          <div class="page-subtitle">${entries.length} event${entries.length===1?'':'s'} recorded</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="loadSection('timeline').then(renderTimeline)">⟳ Refresh</button>
+        <button class="btn btn-primary" onclick="openNewEntry('timeline')">+ New Event</button>
+      </div>
+    </div>
+    <div class="timeline-wrap">
+      ${entries.length ? buildTimelineHtml(entries) : `
+        <div class="timeline-empty">
+          <div class="timeline-empty-icon">⏳</div>
+          <div class="timeline-empty-title">The timeline is unwritten</div>
+          <div class="timeline-empty-text">Click <em>"New Event"</em> to add your first entry.<br>
+          Link Story Beat arcs or create standalone events.<br>
+          Position each event <em>before</em>, <em>after</em>, or <em>during</em> another.</div>
+        </div>`}
+    </div>`;
+}
+
+function buildTimelineHtml(entries) {
+  // ── Step 1: topological sort by relation/anchor ──
+  const sorted  = topoSort(entries);
+  // ── Step 2: group concurrent ("during") events ──
+  const rows    = groupRows(sorted, entries);
+  // ── Step 3: render ──
+  return `<div class="timeline-spine">${rows.map((row, ri) => {
+    const isFirst = ri === 0;
+    const connector = !isFirst ? `
+      <div class="timeline-connector" style="margin-bottom:6px">
+        <div class="timeline-connector-label">${row.relation || '↓'}</div>
+      </div>` : '';
+
+    const nodes = row.nodes.map(idx => {
+      const e    = entries[idx];
+      const type = (e.type || 'Custom Event') === 'Story Beat' ? 'beat' : 'event';
+      const icon = type === 'beat' ? '📖' : '⭐';
+      return `<div class="timeline-node type-${type}" onclick="openDetail('timeline',${idx})">
+        <div class="timeline-dot ${type}"></div>
+        <div class="timeline-node-type">${icon} ${e.type || 'Custom Event'}</div>
+        <div class="timeline-node-name">${e.name || '(Unnamed)'}</div>
+        <div class="timeline-node-preview">${stripLinks(e.overview) || '—'}</div>
+        <div class="timeline-node-meta">
+          ${e.year ? `<span class="timeline-node-year">Year ${e.year}</span>` : ''}
+          ${e.status ? `<span class="timeline-node-status">${e.status}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    const concurrent = row.nodes.length > 1
+      ? `<div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.15em;text-transform:uppercase;color:var(--ink-faint);padding:0 0 6px;opacity:0.7">⇄ Concurrent events</div>` : '';
+
+    return `${connector}<div>${concurrent}<div class="timeline-row">${nodes}</div></div>`;
+  }).join('')}</div>`;
+}
+
+// Topological sort — respect before/after/during chains
+function topoSort(entries) {
+  const n      = entries.length;
+  const nameMap = {};
+  entries.forEach((e, i) => { if (e.name) nameMap[e.name.toLowerCase()] = i; });
+
+  // Build adjacency: "after X" means X → this
+  const deps  = entries.map(() => new Set());
+  entries.forEach((e, i) => {
+    const rel    = (e.relation || '').toLowerCase();
+    const anchor = (e.anchor  || '').toLowerCase().trim();
+    const ai     = anchor ? nameMap[anchor] : undefined;
+    if (ai !== undefined && ai !== i) {
+      if (rel === 'after')  deps[i].add(ai);   // i depends on ai
+      if (rel === 'before') deps[ai].add(i);   // ai depends on i (reversed)
+      // 'during' handled in groupRows
+    }
+  });
+
+  // Kahn's algorithm
+  const inDeg  = entries.map((_, i) => deps[i].size);
+  const queue  = [];
+  entries.forEach((_, i) => { if (inDeg[i] === 0) queue.push(i); });
+  const result = [];
+  while (queue.length) {
+    const cur = queue.shift();
+    result.push(cur);
+    entries.forEach((_, j) => {
+      if (deps[j].has(cur)) {
+        deps[j].delete(cur);
+        if (deps[j].size === 0) queue.push(j);
+      }
+    });
+  }
+  // Any remaining (cycles) appended at end
+  entries.forEach((_, i) => { if (!result.includes(i)) result.push(i); });
+  return result;
+}
+
+// Group "during" events into concurrent rows
+function groupRows(sorted, entries) {
+  const nameMap = {};
+  entries.forEach((e, i) => { if (e.name) nameMap[e.name.toLowerCase()] = i; });
+
+  const rows     = [];
+  const placed   = new Set();
+
+  sorted.forEach(idx => {
+    if (placed.has(idx)) return;
+    const e   = entries[idx];
+    const rel = (e.relation || '').toLowerCase();
+    const anc = (e.anchor   || '').toLowerCase().trim();
+
+    if (rel === 'during' && anc) {
+      // Find the row containing the anchor and append to it
+      const ai = nameMap[anc];
+      const anchorRow = rows.find(r => r.nodes.includes(ai));
+      if (anchorRow) {
+        anchorRow.nodes.push(idx);
+        placed.add(idx);
+        return;
+      }
+    }
+
+    // Determine connector label from relation
+    let relation = '';
+    if (rel === 'after')  relation = '↓ after';
+    if (rel === 'before') relation = '↓ before';
+    if (rel === 'during') relation = '↓ concurrent';
+
+    rows.push({ nodes: [idx], relation });
+    placed.add(idx);
+  });
+
+  return rows;
 }
 
 function switchToMap() {
@@ -1984,7 +2200,7 @@ async function loadSection(section) {
     if (data.error) { showStatus('Sheet error: ' + data.error.message, true); return; }
 
     const rows = data.values || [];
-    if (rows.length < 2) { allData[section] = []; renderSection(section); return; }
+    if (rows.length < 2) { allData[section] = []; if (section === 'timeline') { renderTimeline(); } else { renderSection(section); } return; }
 
     const headers = rows[0];
     allData[section] = rows.slice(1).map(row => {
@@ -1992,7 +2208,7 @@ async function loadSection(section) {
       headers.forEach((h, i) => obj[h] = row[i] || '');
       return obj;
     });
-    renderSection(section);
+    if (section === 'timeline') { renderTimeline(); } else { renderSection(section); }
     showStatus(`Loaded ${allData[section].length} entries`);
   } catch(err) {
     showStatus('Failed to load: ' + err.message, true);
@@ -2165,6 +2381,26 @@ function renderField(f, value) {
     </div>`;
   }
 
+
+  // Story beat dropdown
+  if (f.type === 'storybeat-select') {
+    const beats = (allData['story'] || []).map(s => s.name).filter(Boolean).sort();
+    const opts  = beats.map(b => `<option value="${b}" ${value===b?'selected':''}>${b}</option>`).join('');
+    return `<div><label class="form-label">${f.label}</label>
+      <select class="form-select" id="field_${f.key}">
+        <option value="">— None (standalone event) —</option>${opts}
+      </select></div>`;
+  }
+
+  // Timeline anchor dropdown — all existing timeline entries
+  if (f.type === 'timeline-anchor-select') {
+    const tl   = (allData['timeline'] || []).map(t => t.name).filter(Boolean).sort();
+    const opts = tl.map(t => `<option value="${t}" ${value===t?'selected':''}>${t}</option>`).join('');
+    return `<div><label class="form-label">${f.label} <span style="opacity:0.6;font-size:9px">(required for Before/After/During)</span></label>
+      <select class="form-select" id="field_${f.key}">
+        <option value="">— Select anchor event —</option>${opts}
+      </select></div>`;
+  }
 
   if (f.type === 'location-select') {
     const locs    = (allData['locations'] || []).map(l => l.name).filter(Boolean).sort();
