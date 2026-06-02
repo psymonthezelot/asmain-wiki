@@ -1147,7 +1147,7 @@ const FIELDS = {
   locations: [
     { key:'name',        label:'Location Name',      type:'text',     required:true },
     { key:'type',        label:'Location Type',      type:'select',   options:['City','Town','Village','Landmark','Ruin','Dungeon','Point of Interest','Fortress','Port','Sacred Site','Other'] },
-    { key:'nation',      label:'Parent Nation',      type:'text',     placeholder:'Which nation this belongs to' },
+    { key:'nation',      label:'Parent Nation',      type:'nation-select' },
     { key:'region',      label:'Region / Area',      type:'text' },
     { key:'status',      label:'Status',             type:'select',   options:['Thriving','Declining','Abandoned','Destroyed','Contested','Unknown'] },
     { key:'population',  label:'Population',         type:'text',     placeholder:'e.g. ~12,000 · Small town · Uninhabited' },
@@ -1679,6 +1679,16 @@ function openEntryForm(section, data) {
   document.getElementById('modalBody').innerHTML = html;
   // Attach right-click context menu to every textarea in the form
   document.querySelectorAll('#modalBody .form-textarea').forEach(setupContextMenu);
+  // Wire up nation-select dropdowns
+  FIELDS[section].filter(f => f.type === 'nation-select').forEach(f => {
+    const sel   = document.getElementById('field_' + f.key);
+    const other = document.getElementById('field_' + f.key + '_other');
+    if (sel && other) {
+      sel.addEventListener('change', () => {
+        other.style.display = sel.value === '__other__' ? 'block' : 'none';
+      });
+    }
+  });
   document.getElementById('modalFooter').innerHTML = `
     <div>${editingId !== -1 ? `<button class="btn btn-danger" onclick="deleteEntry('${section}', ${editingId})">✕ Delete</button>` : ''}</div>
     <div style="display:flex;gap:8px">
@@ -1691,6 +1701,24 @@ function openEntryForm(section, data) {
 
 function renderField(f, value) {
   value = value || '';
+
+  // Dynamic nation dropdown — populated from allData.nations
+  if (f.type === 'nation-select') {
+    const nations = (allData['nations'] || []).map(n => n.name).filter(Boolean).sort();
+    const opts = nations.map(n => `<option value="${n}" ${value===n?'selected':''}>${n}</option>`).join('');
+    return `<div><label class="form-label">${f.label}</label>
+      <select class="form-select" id="field_${f.key}">
+        <option value="">— Select Nation —</option>
+        ${opts}
+        <option value="__other__" ${!nations.includes(value)&&value?'selected':''}>Other / Unaffiliated</option>
+      </select>
+      <input class="form-input" id="field_${f.key}_other" placeholder="Type nation name…"
+        style="margin-top:6px;display:${!nations.includes(value)&&value?'block':'none'}"
+        value="${!nations.includes(value)?value:''}"
+        oninput="syncNationOther('${f.key}')" />
+    </div>`;
+  }
+
   if (f.type === 'select') {
     const opts = f.options.map(o => `<option value="${o}" ${value===o?'selected':''}>${o}</option>`).join('');
     return `<div><label class="form-label">${f.label}</label>
@@ -1704,15 +1732,33 @@ function renderField(f, value) {
     <input class="form-input" id="field_${f.key}" value="${value.replace(/"/g,'&quot;')}" placeholder="${f.placeholder||''}" /></div>`;
 }
 
+// Show/hide the free-text nation input when "Other" is selected
+function syncNationOther(key) {
+  const sel   = document.getElementById('field_' + key);
+  const other = document.getElementById('field_' + key + '_other');
+  if (!sel || !other) return;
+  sel.addEventListener('change', () => {
+    other.style.display = sel.value === '__other__' ? 'block' : 'none';
+  });
+}
+
 function submitEntry(section) {
   const fields = FIELDS[section];
   const entry  = {};
   let valid = true;
   fields.forEach(f => {
-    const el = document.getElementById('field_' + f.key);
-    if (el) {
-      entry[f.key] = el.value.trim();
-      if (f.required && !entry[f.key]) { el.style.borderColor = 'var(--red-wax)'; valid = false; }
+    if (f.type === 'nation-select') {
+      const sel   = document.getElementById('field_' + f.key);
+      const other = document.getElementById('field_' + f.key + '_other');
+      if (sel) {
+        entry[f.key] = sel.value === '__other__' ? (other ? other.value.trim() : '') : sel.value;
+      }
+    } else {
+      const el = document.getElementById('field_' + f.key);
+      if (el) {
+        entry[f.key] = el.value.trim();
+        if (f.required && !entry[f.key]) { el.style.borderColor = 'var(--red-wax)'; valid = false; }
+      }
     }
   });
   if (!valid) { showStatus('Please fill in required fields (*)', true); return; }
@@ -1749,9 +1795,18 @@ function openDetail(section, index) {
   if (metaFields.length) {
     html += `<div class="detail-grid">`;
     metaFields.forEach(f => {
+      let val = entry[f.key];
+      // Render nation field as a clickable link
+      if (f.key === 'nation' && val) {
+        const nations = allData['nations'] || [];
+        const ni = nations.findIndex(n => n.name && n.name.toLowerCase() === val.toLowerCase());
+        val = ni !== -1
+          ? `<button class="wiki-link" onclick="navigateToEntry('nations',${ni})">${val}</button>`
+          : val;
+      }
       html += `<div class="detail-field">
         <div class="detail-field-label">${f.label}</div>
-        <div class="detail-field-value">${entry[f.key]}</div>
+        <div class="detail-field-value">${val}</div>
       </div>`;
     });
     html += `</div>`;
@@ -1786,6 +1841,24 @@ function openDetail(section, index) {
         </span>`
       ).join('')}</div>
     </div>`;
+  }
+
+  // Auto-populate locations for nation entries
+  if (section === 'nations' && entry.name) {
+    const linkedLocs = (allData['locations'] || [])
+      .map((loc, i) => ({ loc, i }))
+      .filter(({ loc }) => loc.nation && loc.nation.toLowerCase() === entry.name.toLowerCase());
+    if (linkedLocs.length) {
+      const typeIcon = { 'City':'🏙️','Town':'🏘️','Village':'🏡','Landmark':'🗿','Ruin':'🏚️','Dungeon':'⚠️','Point of Interest':'⭐','Fortress':'🏯','Port':'⚓','Sacred Site':'🕍','Other':'📍' };
+      html += `<div class="backlinks-section">
+        <div class="backlinks-label">📍 ${linkedLocs.length} Location${linkedLocs.length===1?'':'s'} in ${entry.name}</div>
+        <div>${linkedLocs.map(({ loc, i }) =>
+          `<span class="backlink-chip" onclick="navigateToEntry('locations',${i})">
+            <span class="chip-icon">${typeIcon[loc.type]||'📍'}</span>${loc.name}${loc.type?' <span style="opacity:0.6;font-size:8px">(${loc.type})</span>':''}
+          </span>`
+        ).join('')}</div>
+      </div>`;
+    }
   }
 
   html += `<div class="ornament" style="margin-top:12px">✦ ✦ ✦</div>`;
