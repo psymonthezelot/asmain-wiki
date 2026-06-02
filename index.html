@@ -969,8 +969,47 @@
     margin-bottom: 4px;
   }
 
-  /* ══════════════════════════════════════════
-     MOBILE RESPONSIVE
+  /* ── Org Multi-select ── */
+  .org-multiselect { display: flex; flex-direction: column; gap: 6px; }
+  .org-chips {
+    display: flex; flex-wrap: wrap; gap: 5px; align-items: center;
+    min-height: 34px; padding: 5px 8px;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--border); border-radius: 3px;
+  }
+  .org-chips-empty { font-style: italic; font-size: 12px; color: var(--ink-faint); padding: 2px 4px; }
+  .org-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px 2px 10px;
+    background: rgba(200,146,42,0.15);
+    border: 1px solid var(--gold); border-radius: 20px;
+    font-family: 'Cinzel', serif; font-size: 9px; color: var(--ink);
+  }
+  .org-chip-remove {
+    background: none; border: none; cursor: pointer;
+    color: var(--ink-faint); font-size: 12px; line-height: 1;
+    padding: 0; transition: color 0.15s;
+  }
+  .org-chip-remove:hover { color: var(--red-wax); }
+  .org-add-row { display: flex; gap: 6px; }
+  .org-add-select {
+    flex: 1; padding: 7px 10px;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--border); border-radius: 3px;
+    font-family: 'IM Fell English', serif; font-size: 13px; color: var(--ink);
+    cursor: pointer;
+  }
+  .org-add-select:focus { outline: none; border-color: var(--gold); }
+  .org-add-btn {
+    padding: 7px 14px;
+    background: linear-gradient(135deg, rgba(200,146,42,0.2), rgba(200,146,42,0.1));
+    border: 1px solid var(--gold); border-radius: 3px;
+    font-family: 'Cinzel', serif; font-size: 9px; color: var(--ink);
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .org-add-btn:hover { background: rgba(200,146,42,0.3); }
+
+
   ══════════════════════════════════════════ */
 
   /* Hamburger button — hidden on desktop */
@@ -1532,8 +1571,7 @@ const FIELDS = {
     { key:'age',        label:'Approximate Age',    type:'text' },
     { key:'status',     label:'Status',             type:'select',   options:['Alive','Dead','Unknown','Undead','Missing'] },
     { key:'location',   label:'Last Known Location',type:'text' },
-    { key:'affiliation',label:'Affiliations',       type:'text' },
-    { key:'overview',   label:'At a Glance',        type:'textarea', placeholder:'Who is this person and why do they matter?' },
+    { key:'affiliation',label:'Affiliations',       type:'org-multiselect' },
     { key:'appearance', label:'Appearance',         type:'textarea' },
     { key:'personality',label:'Personality',        type:'textarea' },
     { key:'goals',      label:'Goals & Motivations',type:'textarea' },
@@ -1550,7 +1588,7 @@ const FIELDS = {
     { key:'background', label:'Background',         type:'text' },
     { key:'status',     label:'Status',             type:'select',   options:['Active','Retired','Dead','On Hiatus','Deceased (Heroically)'] },
     { key:'campaign',   label:'Current / Last Campaign', type:'text' },
-    { key:'affiliation',label:'Affiliations',       type:'text' },
+    { key:'affiliation',label:'Affiliations',       type:'org-multiselect' },
     { key:'overview',   label:'Character Summary',  type:'textarea', placeholder:'Brief description of this character and their role in the story' },
     { key:'appearance', label:'Appearance',         type:'textarea' },
     { key:'personality',label:'Personality & Traits',type:'textarea' },
@@ -2101,7 +2139,32 @@ function openEntryForm(section, data) {
 function renderField(f, value) {
   value = value || '';
 
-  // Dynamic nation dropdown — populated from allData.nations
+  // Dynamic org multi-select — populated from allData.organizations
+  if (f.type === 'org-multiselect') {
+    const orgs = (allData['organizations'] || []).map(o => o.name).filter(Boolean).sort();
+    const selected = (value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const chipsHtml = selected.length
+      ? selected.map(s => `<span class="org-chip">${s}<button type="button" class="org-chip-remove" onclick="removeOrgChip('${f.key}','${s.replace(/'/g,"\\'")}')">×</button></span>`).join('')
+      : `<span class="org-chips-empty">None assigned</span>`;
+    const opts = orgs.filter(o => !selected.includes(o))
+      .map(o => `<option value="${o}">${o}</option>`).join('');
+    return `<div>
+      <label class="form-label">${f.label}</label>
+      <div class="org-multiselect" id="orgms_${f.key}">
+        <input type="hidden" id="field_${f.key}" value="${selected.join(',')}" />
+        <div class="org-chips" id="orgchips_${f.key}">${chipsHtml}</div>
+        <div class="org-add-row">
+          <select class="org-add-select" id="orgadd_${f.key}">
+            <option value="">— Add organization —</option>
+            ${opts}
+          </select>
+          <button type="button" class="org-add-btn" onclick="addOrgChip('${f.key}')">+ Add</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+
   if (f.type === 'nation-select') {
     const nations = (allData['nations'] || []).map(n => n.name).filter(Boolean).sort();
     const opts = nations.map(n => `<option value="${n}" ${value===n?'selected':''}>${n}</option>`).join('');
@@ -2131,7 +2194,53 @@ function renderField(f, value) {
     <input class="form-input" id="field_${f.key}" value="${value.replace(/"/g,'&quot;')}" placeholder="${f.placeholder||''}" /></div>`;
 }
 
-// Show/hide the free-text nation input when "Other" is selected
+// ── Org multi-select helpers ──
+function addOrgChip(key) {
+  const sel     = document.getElementById('orgadd_' + key);
+  const hidden  = document.getElementById('field_' + key);
+  const chips   = document.getElementById('orgchips_' + key);
+  const val     = sel.value.trim();
+  if (!val) return;
+
+  const current = hidden.value ? hidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  if (current.includes(val)) { sel.value = ''; return; }
+  current.push(val);
+  hidden.value = current.join(',');
+
+  // Rebuild chips
+  chips.innerHTML = current.map(s =>
+    `<span class="org-chip">${s}<button type="button" class="org-chip-remove" onclick="removeOrgChip('${key}','${s.replace(/'/g,"\\'")}')">×</button></span>`
+  ).join('');
+
+  // Remove added option from dropdown
+  const opt = sel.querySelector(`option[value="${val}"]`);
+  if (opt) opt.remove();
+  sel.value = '';
+}
+
+function removeOrgChip(key, val) {
+  const hidden = document.getElementById('field_' + key);
+  const chips  = document.getElementById('orgchips_' + key);
+  const sel    = document.getElementById('orgadd_' + key);
+
+  const current = hidden.value ? hidden.value.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  const updated = current.filter(s => s !== val);
+  hidden.value  = updated.join(',');
+
+  // Rebuild chips
+  chips.innerHTML = updated.length
+    ? updated.map(s => `<span class="org-chip">${s}<button type="button" class="org-chip-remove" onclick="removeOrgChip('${key}','${s.replace(/'/g,"\\'")}')">×</button></span>`).join('')
+    : `<span class="org-chips-empty">None assigned</span>`;
+
+  // Add back to dropdown
+  if (sel && !sel.querySelector(`option[value="${val}"]`)) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = val;
+    sel.appendChild(opt);
+  }
+}
+
+
 function syncNationOther(key) {
   const sel   = document.getElementById('field_' + key);
   const other = document.getElementById('field_' + key + '_other');
@@ -2195,6 +2304,16 @@ function openDetail(section, index) {
     html += `<div class="detail-grid">`;
     metaFields.forEach(f => {
       let val = entry[f.key];
+      // Render affiliation field as clickable org links
+      if (f.key === 'affiliation' && val) {
+        const orgs = allData['organizations'] || [];
+        val = val.split(',').map(s => s.trim()).filter(Boolean).map(name => {
+          const oi = orgs.findIndex(o => o.name && o.name.toLowerCase() === name.toLowerCase());
+          return oi !== -1
+            ? `<button class="wiki-link" onclick="navigateToEntry('organizations',${oi})">${name}</button>`
+            : name;
+        }).join(', ');
+      }
       // Render nation field as a clickable link
       if (f.key === 'nation' && val) {
         const nations = allData['nations'] || [];
@@ -2254,6 +2373,30 @@ function openDetail(section, index) {
         <div>${linkedLocs.map(({ loc, i }) =>
           `<span class="backlink-chip" onclick="navigateToEntry('locations',${i})">
             <span class="chip-icon">${typeIcon[loc.type]||'📍'}</span>${loc.name}${loc.type?' <span style="opacity:0.6;font-size:8px">(${loc.type})</span>':''}
+          </span>`
+        ).join('')}</div>
+      </div>`;
+    }
+  }
+
+  // Auto-populate members for organization entries
+  if (section === 'organizations' && entry.name) {
+    const members = [];
+    ['npcs','pcs'].forEach(sec => {
+      (allData[sec] || []).forEach((e, i) => {
+        const affs = (e.affiliation || '').split(',').map(s => s.trim()).filter(Boolean);
+        if (affs.some(a => a.toLowerCase() === entry.name.toLowerCase())) {
+          members.push({ sec, i, e });
+        }
+      });
+    });
+    if (members.length) {
+      html += `<div class="backlinks-section">
+        <div class="backlinks-label">👤 ${members.length} Member${members.length===1?'':'s'}</div>
+        <div>${members.map(({ sec, i, e }) =>
+          `<span class="backlink-chip" onclick="navigateToEntry('${sec}',${i})">
+            <span class="chip-icon">${SECTIONS[sec].icon}</span>${e.name}
+            <span style="opacity:0.6;font-size:8px">(${sec === 'pcs' ? 'PC' : 'NPC'})</span>
           </span>`
         ).join('')}</div>
       </div>`;
