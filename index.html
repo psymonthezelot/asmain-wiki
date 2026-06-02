@@ -1044,6 +1044,9 @@
       <button class="nav-btn active" onclick="switchSection('nations')" id="nav-nations">
         <span class="icon">🏰</span> Nations
       </button>
+      <button class="nav-btn" onclick="switchSection('locations')" id="nav-locations">
+        <span class="icon">📍</span> Locations
+      </button>
       <button class="nav-btn" onclick="switchSection('organizations')" id="nav-organizations">
         <span class="icon">⚔️</span> Organizations
       </button>
@@ -1113,13 +1116,14 @@ let allData = {};
 let editingId = null;
 
 const SECTIONS = {
-  nations:       { label: 'Nations',           icon: '🏰', color: '#2a6e3a' },
-  organizations: { label: 'Organizations',     icon: '⚔️', color: '#6e2a2a' },
-  deities:       { label: 'Deities',           icon: '✨', color: '#4a2a6e' },
-  races:         { label: 'Races & Peoples',   icon: '🧬', color: '#2a5a6e' },
+  nations:       { label: 'Nations',             icon: '🏰', color: '#2a6e3a' },
+  locations:     { label: 'Locations',           icon: '📍', color: '#4a6e2a' },
+  organizations: { label: 'Organizations',       icon: '⚔️', color: '#6e2a2a' },
+  deities:       { label: 'Deities',             icon: '✨', color: '#4a2a6e' },
+  races:         { label: 'Races & Peoples',     icon: '🧬', color: '#2a5a6e' },
   npcs:          { label: 'Non-Player Characters', icon: '🎭', color: '#6e5a2a' },
-  pcs:           { label: 'Player Characters', icon: '🛡️', color: '#3a6e2a' },
-  story:         { label: 'Story Beats',       icon: '📖', color: '#2a3a6e' },
+  pcs:           { label: 'Player Characters',   icon: '🛡️', color: '#3a6e2a' },
+  story:         { label: 'Story Beats',         icon: '📖', color: '#2a3a6e' },
 };
 
 // Fields per section
@@ -1139,6 +1143,24 @@ const FIELDS = {
     { key:'plotlines',  label:'Active Plot Hooks',  type:'textarea' },
     { key:'tags',       label:'Tags',               type:'text',     placeholder:'comma-separated' },
     { key:'dm',         label:'Last Edited By (DM)',type:'text' },
+  ],
+  locations: [
+    { key:'name',        label:'Location Name',      type:'text',     required:true },
+    { key:'type',        label:'Location Type',      type:'select',   options:['City','Town','Village','Landmark','Ruin','Dungeon','Point of Interest','Fortress','Port','Sacred Site','Other'] },
+    { key:'nation',      label:'Parent Nation',      type:'text',     placeholder:'Which nation this belongs to' },
+    { key:'region',      label:'Region / Area',      type:'text' },
+    { key:'status',      label:'Status',             type:'select',   options:['Thriving','Declining','Abandoned','Destroyed','Contested','Unknown'] },
+    { key:'population',  label:'Population',         type:'text',     placeholder:'e.g. ~12,000 · Small town · Uninhabited' },
+    { key:'government',  label:'Local Government',   type:'text',     placeholder:'Mayor, Council, Lord, etc.' },
+    { key:'overview',    label:'Overview',           type:'textarea', placeholder:'What is this place and why does it matter?' },
+    { key:'history',     label:'History',            type:'textarea' },
+    { key:'npcs',        label:'Notable NPCs',       type:'textarea', placeholder:'Key figures found here — use [[Name]] to link' },
+    { key:'factions',    label:'Local Factions',     type:'textarea', placeholder:'Organizations with a presence here — use [[Name]] to link' },
+    { key:'poi',         label:'Points of Interest', type:'textarea', placeholder:'Notable districts, buildings, features, rooms, traps…' },
+    { key:'secrets',     label:'Secrets (DM Only)',  type:'textarea' },
+    { key:'plotlines',   label:'Active Plot Hooks',  type:'textarea' },
+    { key:'tags',        label:'Tags',               type:'text',     placeholder:'comma-separated' },
+    { key:'dm',          label:'Last Edited By (DM)',type:'text' },
   ],
   organizations: [
     { key:'name',       label:'Organization Name',  type:'text',     required:true },
@@ -1297,6 +1319,17 @@ function renderSection(section) {
       <button class="toggle-btn ${deityView==='grid'?'active':''}"  onclick="setDeityView('grid')">▦ Grid</button>
     </div>` : '';
 
+  // Location type filter chips
+  const locationFilter = section === 'locations' ? (() => {
+    const types = [...new Set((allData['locations']||[]).map(e=>e.type).filter(Boolean))];
+    if (!types.length) return '';
+    return `<div style="padding:8px 28px;border-bottom:1px solid var(--parchment-deep);display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <span style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.15em;color:var(--ink-faint);text-transform:uppercase;margin-right:4px">Filter:</span>
+      <button class="toggle-btn ${locFilter===''?'active':''}" onclick="setLocFilter('')">All</button>
+      ${types.map(t=>`<button class="toggle-btn ${locFilter===t?'active':''}" onclick="setLocFilter('${t}')">${t}</button>`).join('')}
+    </div>`;
+  })() : '';
+
   panel.innerHTML = `
     <div class="page-header">
       <div class="page-title-wrap">
@@ -1315,6 +1348,7 @@ function renderSection(section) {
     <div class="search-wrap">
       <input class="search-input" id="searchInput" placeholder="Search ${s.label.toLowerCase()}…" oninput="filterEntries()" />
     </div>
+    ${locationFilter}
     <div id="entriesGrid">
       ${section === 'deities' && deityView === 'pairs'
         ? renderDeityPairs(entries)
@@ -1332,6 +1366,13 @@ let deityView = 'pairs';
 function setDeityView(v) {
   deityView = v;
   renderSection('deities');
+}
+
+// ── Location type filter state ──
+let locFilter = '';
+function setLocFilter(v) {
+  locFilter = v;
+  renderSection('locations');
 }
 
 // ── Deity pairs renderer ──
@@ -1428,6 +1469,27 @@ function renderCards(entries, section) {
   return entries.map((e, i) => {
     const tags = (e.tags || '').split(',').map(t => t.trim()).filter(Boolean);
     const tagHtml = tags.slice(0,3).map(t => `<span class="tag-badge">${t}</span>`).join('');
+
+    // Locations get a richer card showing type + nation
+    if (section === 'locations') {
+      const typeIcon = { 'City':'🏙️','Town':'🏘️','Village':'🏡','Landmark':'🗿','Ruin':'🏚️','Dungeon':'⚠️','Point of Interest':'⭐','Fortress':'🏯','Port':'⚓','Sacred Site':'🕍','Other':'📍' }[e.type] || '📍';
+      return `
+        <div class="entry-card" onclick="openDetail('${section}', ${i})">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:18px">${typeIcon}</span>
+            <div>
+              <div class="entry-card-name" style="margin-bottom:1px">${e.name || '(Unnamed)'}</div>
+              <div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.12em;color:var(--ink-faint);text-transform:uppercase">${e.type || 'Location'}${e.nation ? ' · ' + e.nation : ''}</div>
+            </div>
+          </div>
+          <div class="entry-card-preview">${e.overview || '—'}</div>
+          <div class="entry-card-footer">
+            <div>${tagHtml}</div>
+            <div class="entry-card-meta">${e.status || ''}</div>
+          </div>
+        </div>`;
+    }
+
     const statusBadge = e.status ? `<span class="entry-card-tag">${e.status}</span>` : '';
     return `
       <div class="entry-card" onclick="openDetail('${section}', ${i})">
@@ -1443,8 +1505,14 @@ function renderCards(entries, section) {
 }
 
 function filterEntries() {
-  const q = document.getElementById('searchInput').value.toLowerCase();
-  const entries = allData[currentSection] || [];
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  let entries = allData[currentSection] || [];
+
+  // Apply location type filter
+  if (currentSection === 'locations' && locFilter) {
+    entries = entries.filter(e => e.type === locFilter);
+  }
+
   const filtered = q ? entries.filter(e =>
     JSON.stringify(e).toLowerCase().includes(q)
   ) : entries;
