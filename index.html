@@ -968,6 +968,65 @@
     margin-right: 4px;
     margin-bottom: 4px;
   }
+
+  /* ── World Map ── */
+  .map-container {
+    position: relative;
+    display: inline-block;
+    min-width: 100%;
+    cursor: crosshair;
+  }
+  .map-img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+  .map-placeholder {
+    width: 100%; min-height: 480px;
+    background: linear-gradient(145deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; cursor: default; border-radius: 3px;
+    border: 2px dashed var(--parchment-deep);
+  }
+  .map-placeholder-icon { font-size: 56px; opacity: 0.25; }
+  .map-placeholder-text { font-family:'Cinzel',serif; font-size:13px; color:var(--ink-faint); text-align:center; line-height:1.9; }
+  .map-pin {
+    position: absolute; transform: translate(-50%, -100%);
+    cursor: pointer; z-index: 10; transition: transform 0.15s;
+  }
+  .map-pin:hover { transform: translate(-50%, -100%) scale(1.3); z-index: 20; }
+  .map-pin svg { filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
+  .map-pin-label {
+    position: absolute; left: 50%; top: calc(100% + 4px); transform: translateX(-50%);
+    background: rgba(26,14,6,0.92); border: 1px solid var(--gold); border-radius: 3px;
+    padding: 3px 9px; font-family:'Cinzel',serif; font-size:9px; color:var(--gold-light);
+    white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+  }
+  .map-pin:hover .map-pin-label { opacity: 1; }
+  .map-header {
+    padding: 20px 28px 14px; border-bottom: 2px solid var(--parchment-deep);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+  .map-hint {
+    font-family:'Cinzel',serif; font-size:9px; letter-spacing:0.1em;
+    color:var(--ink-faint); font-style:italic; padding:8px 28px;
+    border-bottom: 1px solid var(--parchment-deep);
+  }
+  .map-body { padding: 16px 24px 28px; overflow-x: auto; }
+  .pin-ctx {
+    position: fixed; background: #1a0d05; border: 1px solid var(--gold);
+    border-radius: 4px; box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    z-index: 1000; min-width: 160px; overflow: hidden; animation: ctxFadeIn 0.12s ease;
+  }
+  .pin-ctx-header {
+    font-family:'Cinzel',serif; font-size:8px; letter-spacing:0.2em; text-transform:uppercase;
+    color:var(--gold); padding:7px 12px 5px; border-bottom:1px solid rgba(200,146,42,0.2); opacity:0.8;
+  }
+  .pin-ctx-item {
+    display:flex; align-items:center; gap:9px; padding:9px 14px; cursor:pointer;
+    font-family:'Cinzel',serif; font-size:11px; color:var(--parchment-dark);
+    transition:background 0.1s; border:none; background:none; width:100%; text-align:left;
+  }
+  .pin-ctx-item:hover { background:rgba(200,146,42,0.15); color:var(--gold-light); }
+  .pin-ctx-item.danger { color:#d06060; }
+  .pin-ctx-item.danger:hover { background:rgba(139,32,32,0.2); }
+  .pin-form { padding:20px 24px 24px; display:flex; flex-direction:column; gap:14px; }
 </style>
 </head>
 <body>
@@ -1002,6 +1061,9 @@
       </button>
       <button class="nav-btn" onclick="switchSection('story')" id="nav-story">
         <span class="icon">📖</span> Story Beats
+      </button>
+      <button class="nav-btn" onclick="switchToMap()" id="nav-map">
+        <span class="icon">🗺️</span> World Map
       </button>
     </div>
 
@@ -1928,8 +1990,287 @@ function closePicker() {
 
 
 
-function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
-function closeModalOnOverlay(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
+// ═══════════════════════════════════════════════
+//  WORLD MAP
+// ═══════════════════════════════════════════════
+let mapPins      = [];   // { id, label, linkedSection, linkedName, x, y } (x/y as % of image)
+let mapImageData = null; // base64 data URL
+let mapPendingX  = 0;
+let mapPendingY  = 0;
+
+function switchToMap() {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('nav-map').classList.add('active');
+  currentSection = 'map';
+  renderMap();
+  loadMapData();
+}
+
+function renderMap() {
+  const panel = document.getElementById('mainPanel');
+  panel.innerHTML = `
+    <div class="map-header">
+      <div class="page-title-wrap">
+        <span class="page-icon">🗺️</span>
+        <div>
+          <div class="page-title">World Map</div>
+          <div class="page-subtitle">${mapPins.length} location${mapPins.length===1?'':'s'} marked</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" onclick="loadMapData()">⟳ Refresh</button>
+        ${mapImageData
+          ? `<button class="btn btn-secondary" onclick="document.getElementById('mapUpload').click()">↑ Replace Map</button>`
+          : `<button class="btn btn-primary"   onclick="document.getElementById('mapUpload').click()">↑ Upload Map Image</button>`}
+        <input type="file" id="mapUpload" accept="image/*" style="display:none" onchange="handleMapUpload(event)" />
+      </div>
+    </div>
+    <div class="map-hint">
+      ${mapImageData
+        ? '🖱 Right-click anywhere on the map to place a pin · Click a pin to open its linked entry'
+        : 'Upload a map image to get started — any PNG, JPG, or WEBP works'}
+    </div>
+    <div class="map-body">
+      <div class="map-container" id="mapContainer" oncontextmenu="onMapRightClick(event)">
+        ${mapImageData
+          ? `<img class="map-img" id="mapImg" src="${mapImageData}" draggable="false" />`
+          : `<div class="map-placeholder">
+               <div class="map-placeholder-icon">🗺️</div>
+               <div class="map-placeholder-text">No map uploaded yet<br><em>Click "Upload Map Image" above to add your world map</em></div>
+             </div>`}
+        <div id="mapPinsLayer"></div>
+      </div>
+    </div>
+  `;
+  renderPins();
+}
+
+function handleMapUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    mapImageData = ev.target.result;
+    saveMapImageToSheet();
+    renderMap();
+    showStatus('Map uploaded ✓');
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderPins() {
+  const layer = document.getElementById('mapPinsLayer');
+  if (!layer) return;
+  layer.innerHTML = mapPins.map((pin, i) => `
+    <div class="map-pin" style="left:${pin.x}%;top:${pin.y}%"
+         onclick="onPinClick(event,${i})"
+         oncontextmenu="onPinRightClick(event,${i})">
+      <svg width="22" height="30" viewBox="0 0 22 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="11" cy="28" rx="5" ry="2" fill="rgba(0,0,0,0.3)"/>
+        <path d="M11 0C6.03 0 2 4.03 2 9c0 6.75 9 19 9 19s9-12.25 9-19c0-4.97-4.03-9-9-9z"
+              fill="${pin.linkedName ? '#c8922a' : '#8b2020'}" stroke="#fff" stroke-width="1.5"/>
+        <circle cx="11" cy="9" r="4" fill="rgba(255,255,255,0.5)"/>
+      </svg>
+      <div class="map-pin-label">${pin.label || pin.linkedName || 'Unnamed'}</div>
+    </div>`).join('');
+}
+
+function onMapRightClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!mapImageData) return;
+
+  const img = document.getElementById('mapImg');
+  if (!img) return;
+  const rect = img.getBoundingClientRect();
+  mapPendingX = ((e.clientX - rect.left) / rect.width)  * 100;
+  mapPendingY = ((e.clientY - rect.top)  / rect.height) * 100;
+
+  removePinCtx();
+  const menu = document.createElement('div');
+  menu.id = 'pinCtx';
+  menu.className = 'pin-ctx';
+  menu.innerHTML = `
+    <div class="pin-ctx-header">✦ Place Pin</div>
+    <button class="pin-ctx-item" onclick="openPinEditor(-1)">📍 Add pin here</button>
+  `;
+  document.body.appendChild(menu);
+  const fx = Math.min(e.clientX, window.innerWidth  - 180);
+  const fy = Math.min(e.clientY, window.innerHeight - 80);
+  menu.style.left = fx + 'px';
+  menu.style.top  = fy + 'px';
+  setTimeout(() => document.addEventListener('click', removePinCtx, { once: true }), 10);
+}
+
+function onPinRightClick(e, idx) {
+  e.preventDefault();
+  e.stopPropagation();
+  removePinCtx();
+  const menu = document.createElement('div');
+  menu.id = 'pinCtx';
+  menu.className = 'pin-ctx';
+  menu.innerHTML = `
+    <div class="pin-ctx-header">✦ Pin Options</div>
+    <button class="pin-ctx-item" onclick="openPinEditor(${idx})">✏️ Edit pin</button>
+    <button class="pin-ctx-item danger" onclick="deletePin(${idx})">✕ Remove pin</button>
+  `;
+  document.body.appendChild(menu);
+  const fx = Math.min(e.clientX, window.innerWidth  - 180);
+  const fy = Math.min(e.clientY, window.innerHeight - 100);
+  menu.style.left = fx + 'px';
+  menu.style.top  = fy + 'px';
+  setTimeout(() => document.addEventListener('click', removePinCtx, { once: true }), 10);
+}
+
+function onPinClick(e, idx) {
+  e.stopPropagation();
+  const pin = mapPins[idx];
+  if (pin.linkedSection && pin.linkedName) {
+    const entries = allData[pin.linkedSection] || [];
+    const entryIdx = entries.findIndex(en => en.name && en.name.toLowerCase() === pin.linkedName.toLowerCase());
+    if (entryIdx !== -1) {
+      navigateToEntry(pin.linkedSection, entryIdx);
+      return;
+    }
+  }
+  openPinEditor(idx);
+}
+
+function removePinCtx() {
+  const m = document.getElementById('pinCtx');
+  if (m) m.remove();
+}
+
+function openPinEditor(idx) {
+  removePinCtx();
+  const pin = idx === -1 ? { label:'', linkedSection:'', linkedName:'' } : mapPins[idx];
+
+  // Build entry options grouped by section
+  let entryOptions = '<option value="">— No link —</option>';
+  Object.keys(SECTIONS).forEach(sec => {
+    const entries = allData[sec] || [];
+    if (entries.length) {
+      entryOptions += `<optgroup label="${SECTIONS[sec].icon} ${SECTIONS[sec].label}">`;
+      entries.forEach(e => {
+        const val = `${sec}::${e.name}`;
+        const sel = (pin.linkedSection === sec && pin.linkedName === e.name) ? 'selected' : '';
+        entryOptions += `<option value="${val}" ${sel}>${e.name}</option>`;
+      });
+      entryOptions += '</optgroup>';
+    }
+  });
+
+  document.getElementById('modalTitle').textContent = idx === -1 ? 'Place New Pin' : 'Edit Pin';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="pin-form">
+      <div>
+        <label class="form-label">Pin Label</label>
+        <input class="form-input" id="pinLabel" value="${pin.label || ''}" placeholder="e.g. Capital City, Ancient Ruins…" />
+      </div>
+      <div>
+        <label class="form-label">Link to Wiki Entry</label>
+        <select class="form-select" id="pinLink">${entryOptions}</select>
+      </div>
+    </div>`;
+  document.getElementById('modalFooter').innerHTML = `
+    <div>${idx !== -1 ? `<button class="btn btn-danger" onclick="deletePin(${idx});closeModal()">✕ Delete</button>` : ''}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPin(${idx})">Save Pin</button>
+    </div>`;
+  document.getElementById('modalOverlay').style.display = 'flex';
+}
+
+function submitPin(idx) {
+  const label   = document.getElementById('pinLabel').value.trim();
+  const linkVal = document.getElementById('pinLink').value;
+  const [linkedSection, linkedName] = linkVal ? linkVal.split('::') : ['',''];
+
+  if (idx === -1) {
+    mapPins.push({ id: Date.now(), label, linkedSection: linkedSection||'', linkedName: linkedName||'', x: mapPendingX, y: mapPendingY });
+  } else {
+    mapPins[idx] = { ...mapPins[idx], label, linkedSection: linkedSection||'', linkedName: linkedName||'' };
+  }
+  closeModal();
+  renderPins();
+  saveMapPinsToSheet();
+  showStatus('Pin saved ✓');
+}
+
+function deletePin(idx) {
+  mapPins.splice(idx, 1);
+  renderPins();
+  saveMapPinsToSheet();
+  showStatus('Pin removed');
+}
+
+// ── Sheet persistence for map ──
+async function saveMapPinsToSheet() {
+  try {
+    const headers = ['id','label','linkedSection','linkedName','x','y'];
+    await fetch(WORKER_URL, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'ensureHeaders', sheetId:config.sheetId, tabName:'Map', headers })
+    });
+    // Clear and rewrite all pins: first clear data rows, then re-append each
+    // For simplicity we overwrite row by row via append after clearing
+    // We use a special 'clearAndReplace' approach: delete existing rows then append
+    // Update using append for each pin
+    for (let i = 0; i < mapPins.length; i++) {
+      const pin = mapPins[i];
+      const values = [String(pin.id), pin.label, pin.linkedSection, pin.linkedName, String(pin.x), String(pin.y)];
+      await fetch(WORKER_URL, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: i < mapPins.length ? 'append' : 'update', sheetId: config.sheetId, tabName: 'Map', row: i, values, headers })
+      });
+    }
+  } catch(err) { console.error('Map pin save error:', err); }
+}
+
+async function saveMapImageToSheet() {
+  // Store the image as a single cell in a 'MapImage' tab
+  try {
+    const headers = ['data'];
+    await fetch(WORKER_URL, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'ensureHeaders', sheetId:config.sheetId, tabName:'MapImage', headers })
+    });
+    await fetch(WORKER_URL, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action:'update', sheetId:config.sheetId, tabName:'MapImage', row:0, values:[mapImageData], headers })
+    });
+  } catch(err) { console.error('Map image save error:', err); }
+}
+
+async function loadMapData() {
+  if (!config.sheetId || !config.apiKey) return;
+  try {
+    // Load pins
+    const pinsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values/Map?key=${config.apiKey}`;
+    const pinsRes = await fetch(pinsUrl);
+    const pinsData = await pinsRes.json();
+    if (pinsData.values && pinsData.values.length > 1) {
+      mapPins = pinsData.values.slice(1).map(r => ({
+        id: r[0]||Date.now(), label:r[1]||'', linkedSection:r[2]||'', linkedName:r[3]||'',
+        x: parseFloat(r[4])||0, y: parseFloat(r[5])||0
+      }));
+    }
+
+    // Load image
+    const imgUrl = `https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}/values/MapImage?key=${config.apiKey}`;
+    const imgRes = await fetch(imgUrl);
+    const imgData = await imgRes.json();
+    if (imgData.values && imgData.values[1] && imgData.values[1][0]) {
+      mapImageData = imgData.values[1][0];
+    }
+
+    if (currentSection === 'map') renderMap();
+    showStatus(`Map loaded — ${mapPins.length} pin${mapPins.length===1?'':'s'}`);
+  } catch(err) { console.error('Map load error:', err); }
+}
+
+
 
 // ═══════════════════════════════════════════════
 //  STATUS
