@@ -1570,7 +1570,7 @@ const FIELDS = {
     { key:'role',       label:'Class / Role',       type:'text',     placeholder:'e.g. Archmage, Crime Lord, Retired Adventurer' },
     { key:'age',        label:'Approximate Age',    type:'text' },
     { key:'status',     label:'Status',             type:'select',   options:['Alive','Dead','Unknown','Undead','Missing'] },
-    { key:'location',   label:'Last Known Location',type:'text' },
+    { key:'location',   label:'Last Known Location',type:'location-select' },
     { key:'affiliation',label:'Affiliations',       type:'org-multiselect' },
     { key:'overview',   label:'At a Glance',        type:'textarea', placeholder:'Who is this person and why do they matter?' },
     { key:'appearance', label:'Appearance',         type:'textarea' },
@@ -2117,8 +2117,8 @@ function openEntryForm(section, data) {
   document.getElementById('modalBody').innerHTML = html;
   // Attach right-click context menu to every textarea in the form
   document.querySelectorAll('#modalBody .form-textarea').forEach(setupContextMenu);
-  // Wire up nation-select dropdowns
-  FIELDS[section].filter(f => f.type === 'nation-select').forEach(f => {
+  // Wire up nation-select and location-select dropdowns
+  FIELDS[section].filter(f => f.type === 'nation-select' || f.type === 'location-select').forEach(f => {
     const sel   = document.getElementById('field_' + f.key);
     const other = document.getElementById('field_' + f.key + '_other');
     if (sel && other) {
@@ -2165,6 +2165,21 @@ function renderField(f, value) {
     </div>`;
   }
 
+
+  if (f.type === 'location-select') {
+    const locs = (allData['locations'] || []).map(l => l.name).filter(Boolean).sort();
+    const opts = locs.map(l => `<option value="${l}" ${value===l?'selected':''}>${l}</option>`).join('');
+    return `<div><label class="form-label">${f.label}</label>
+      <select class="form-select" id="field_${f.key}">
+        <option value="">— Select Location —</option>
+        ${opts}
+        <option value="__other__" ${!locs.includes(value)&&value?'selected':''}>Other / Unknown</option>
+      </select>
+      <input class="form-input" id="field_${f.key}_other" placeholder="Type location name…"
+        style="margin-top:6px;display:${!locs.includes(value)&&value?'block':'none'}"
+        value="${!locs.includes(value)?value:''}" />
+    </div>`;
+  }
 
   if (f.type === 'nation-select') {
     const nations = (allData['nations'] || []).map(n => n.name).filter(Boolean).sort();
@@ -2256,7 +2271,7 @@ function submitEntry(section) {
   const entry  = {};
   let valid = true;
   fields.forEach(f => {
-    if (f.type === 'nation-select') {
+    if (f.type === 'nation-select' || f.type === 'location-select') {
       const sel   = document.getElementById('field_' + f.key);
       const other = document.getElementById('field_' + f.key + '_other');
       if (sel) {
@@ -2305,6 +2320,14 @@ function openDetail(section, index) {
     html += `<div class="detail-grid">`;
     metaFields.forEach(f => {
       let val = entry[f.key];
+      // Render location field as a clickable link
+      if (f.key === 'location' && val) {
+        const locs = allData['locations'] || [];
+        const li = locs.findIndex(l => l.name && l.name.toLowerCase() === val.toLowerCase());
+        val = li !== -1
+          ? `<button class="wiki-link" onclick="navigateToEntry('locations',${li})">${val}</button>`
+          : val;
+      }
       // Render affiliation field as clickable org links
       if (f.key === 'affiliation' && val) {
         const orgs = allData['organizations'] || [];
@@ -2374,6 +2397,29 @@ function openDetail(section, index) {
         <div>${linkedLocs.map(({ loc, i }) =>
           `<span class="backlink-chip" onclick="navigateToEntry('locations',${i})">
             <span class="chip-icon">${typeIcon[loc.type]||'📍'}</span>${loc.name}${loc.type?' <span style="opacity:0.6;font-size:8px">(${loc.type})</span>':''}
+          </span>`
+        ).join('')}</div>
+      </div>`;
+    }
+  }
+
+  // Auto-populate NPCs/PCs last seen at this location
+  if (section === 'locations' && entry.name) {
+    const seenHere = [];
+    ['npcs','pcs'].forEach(sec => {
+      (allData[sec] || []).forEach((e, i) => {
+        if (e.location && e.location.toLowerCase() === entry.name.toLowerCase()) {
+          seenHere.push({ sec, i, e });
+        }
+      });
+    });
+    if (seenHere.length) {
+      html += `<div class="backlinks-section">
+        <div class="backlinks-label">👁 ${seenHere.length} Character${seenHere.length===1?'':'s'} Last Seen Here</div>
+        <div>${seenHere.map(({ sec, i, e }) =>
+          `<span class="backlink-chip" onclick="navigateToEntry('${sec}',${i})">
+            <span class="chip-icon">${SECTIONS[sec].icon}</span>${e.name}
+            <span style="opacity:0.6;font-size:8px">(${sec === 'pcs' ? 'PC' : 'NPC'})</span>
           </span>`
         ).join('')}</div>
       </div>`;
