@@ -1492,21 +1492,45 @@ function b64url(str) {
 
 function b64urlBytes(bytes) {
   let bin = '';
-  bytes.forEach(b => bin += String.fromCharCode(b));
+  new Uint8Array(bytes).forEach(b => bin += String.fromCharCode(b));
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
 async function rsaSign(data, pemKey) {
-  const keyData = pemKey.replace(/-----[^-]+-----/g,'').replace(/\s/g,'');
-  const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8', binaryKey.buffer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false, ['sign']
+  // Strip PEM headers and all whitespace cleanly
+  const stripped = pemKey
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/[\r\n\s]+/g, '');
+
+  // Decode base64 to ArrayBuffer
+  const binaryStr = atob(stripped);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+
+  // Import key with explicit hash object
+  let cryptoKey;
+  try {
+    cryptoKey = await crypto.subtle.importKey(
+      'pkcs8',
+      bytes.buffer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: { name: 'SHA-256' } },
+      false,
+      ['sign']
+    );
+  } catch(e) {
+    throw new Error('Key import failed: ' + e.message + ' (key length: ' + bytes.length + ')');
+  }
+
+  const encoder   = new TextEncoder();
+  const signature = await crypto.subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    cryptoKey,
+    encoder.encode(data)
   );
-  const encoder = new TextEncoder();
-  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, encoder.encode(data));
-  return b64urlBytes(new Uint8Array(signature));
+  return b64urlBytes(signature);
 }
 
 async function saveEntry(section, entry, rowIndex) {
