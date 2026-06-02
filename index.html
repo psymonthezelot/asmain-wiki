@@ -1810,7 +1810,7 @@ function renderDeityPairs(entries) {
         <div class="deity-card-name">${e.name || '(Unnamed)'}</div>
         ${e.titles ? `<div class="deity-card-titles">${e.titles}</div>` : ''}
         <div class="deity-card-domains">${domainHtml}</div>
-        <div class="deity-card-overview">${e.overview || ''}</div>
+        <div class="deity-card-overview">${stripLinks(e.overview) || ''}</div>
         ${e.status ? `<div class="deity-card-status">${e.status}</div>` : ''}
       </div>`;
   }
@@ -1851,6 +1851,10 @@ function renderDeityPairs(entries) {
 
 
 
+function stripLinks(text) {
+  return (text || '').replace(/\[\[([^\]]+)\]\]/g, '$1');
+}
+
 function renderCards(entries, section) {
   if (!entries.length) {
     return `<div class="empty-state" style="grid-column:1/-1">
@@ -1877,7 +1881,7 @@ function renderCards(entries, section) {
               <div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:0.12em;color:var(--ink-faint);text-transform:uppercase">${e.type || 'Location'}${e.nation ? ' · ' + e.nation : ''}</div>
             </div>
           </div>
-          <div class="entry-card-preview">${e.overview || '—'}</div>
+          <div class="entry-card-preview">${stripLinks(e.overview) || '—'}</div>
           <div class="entry-card-footer">
             <div>${tagHtml}</div>
             <div class="entry-card-meta">${e.status || ''}</div>
@@ -1890,7 +1894,7 @@ function renderCards(entries, section) {
       <div class="entry-card" onclick="openDetail('${section}', ${i})">
         ${statusBadge}
         <div class="entry-card-name">${e.name || '(Unnamed)'}</div>
-        <div class="entry-card-preview">${e.overview || e.premise || '—'}</div>
+        <div class="entry-card-preview">${stripLinks(e.overview || e.premise) || '—'}</div>
         <div class="entry-card-footer">
           <div>${tagHtml}</div>
           <div class="entry-card-meta">${e.dm ? 'by '+e.dm : ''}</div>
