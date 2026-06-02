@@ -2612,7 +2612,8 @@ function openDetail(section, index) {
 
   document.getElementById('modalTitle').textContent = entry.name || 'Entry Detail';
 
-  const topFields      = fields.filter(f => f.type !== 'textarea' && f.key !== 'name' && f.key !== 'tags' && f.key !== 'dm');
+  const topFields      = fields.filter(f => f.type !== 'textarea' && f.key !== 'name' && f.key !== 'tags' && f.key !== 'dm' && f.type !== 'pc-multiselect' && f.type !== 'org-multiselect');
+  const multiFields    = fields.filter(f => (f.type === 'pc-multiselect' || f.type === 'org-multiselect') && entry[f.key]);
   const textareaFields = fields.filter(f => f.type === 'textarea');
 
   let html = `<div class="ornament">✦ ✦ ✦</div>`;
@@ -2622,18 +2623,7 @@ function openDetail(section, index) {
   if (metaFields.length) {
     html += `<div class="detail-grid">`;
     metaFields.forEach(f => {
-      let val = entry[f.key];
-      // Render party field as clickable PC links
-      if (f.key === 'party' && val) {
-        const pcs = allData['pcs'] || [];
-        val = val.split(',').map(s => s.trim()).filter(Boolean).map(name => {
-          const pi = pcs.findIndex(p => p.name && p.name.toLowerCase() === name.toLowerCase());
-          return pi !== -1
-            ? `<button class="wiki-link" onclick="navigateToEntry('pcs',${pi})">${name}</button>`
-            : name;
-        }).join(', ');
-      }
-      // Render location field as a clickable link (checks locations then nations)
+      let val = entry[f.key];      // Render location field as a clickable link (checks locations then nations)
       if (f.key === 'location' && val) {
         const locs    = allData['locations'] || [];
         const nations = allData['nations']   || [];
@@ -2644,16 +2634,6 @@ function openDetail(section, index) {
         } else if (ni !== -1) {
           val = `<button class="wiki-link" onclick="navigateToEntry('nations',${ni})">${val}</button>`;
         }
-      }
-      // Render affiliation field as clickable org links
-      if (f.key === 'affiliation' && val) {
-        const orgs = allData['organizations'] || [];
-        val = val.split(',').map(s => s.trim()).filter(Boolean).map(name => {
-          const oi = orgs.findIndex(o => o.name && o.name.toLowerCase() === name.toLowerCase());
-          return oi !== -1
-            ? `<button class="wiki-link" onclick="navigateToEntry('organizations',${oi})">${name}</button>`
-            : name;
-        }).join(', ');
       }
       // Render nation field as a clickable link
       if (f.key === 'nation' && val) {
@@ -2675,6 +2655,36 @@ function openDetail(section, index) {
     }
     html += `<hr class="form-divider">`;
   }
+
+  // Full-width multi-select fields (party, affiliations) rendered as clickable chips
+  multiFields.forEach(f => {
+    let links = '';
+    if (f.key === 'party') {
+      const pcs = allData['pcs'] || [];
+      links = (entry[f.key] || '').split(',').map(s => s.trim()).filter(Boolean).map(name => {
+        const pi = pcs.findIndex(p => p.name && p.name.toLowerCase() === name.toLowerCase());
+        return pi !== -1
+          ? `<button class="wiki-link" onclick="navigateToEntry('pcs',${pi})">${name}</button>`
+          : `<span>${name}</span>`;
+      }).join(' · ');
+    } else if (f.key === 'affiliation') {
+      const orgs = allData['organizations'] || [];
+      links = (entry[f.key] || '').split(',').map(s => s.trim()).filter(Boolean).map(name => {
+        const oi = orgs.findIndex(o => o.name && o.name.toLowerCase() === name.toLowerCase());
+        return oi !== -1
+          ? `<button class="wiki-link" onclick="navigateToEntry('organizations',${oi})">${name}</button>`
+          : `<span>${name}</span>`;
+      }).join(' · ');
+    }
+    if (links) {
+      html += `<div class="detail-field" style="margin-bottom:14px">
+        <div class="detail-field-label">${f.label}</div>
+        <div class="detail-field-value" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">${links}</div>
+      </div>`;
+    }
+  });
+
+  if (multiFields.length) html += `<hr class="form-divider">`;
 
   // Lore fields — render wiki links
   textareaFields.filter(f => entry[f.key]).forEach(f => {
